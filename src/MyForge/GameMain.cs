@@ -17,6 +17,7 @@ class GameMain : G2AppBase
     private G2Texture? _titleBackground, _gameBackground, _anvil, _sword, _hammer;
     private G2Font? _displayFont, _headingFont, _bodyFont, _smallFont, _valueFont, _buttonFont;
     private ID2D1SolidColorBrush? _brush;
+    private ForgeAudio? _audio;
 
     private static readonly Rect StartBounds = new(64, 380, 260, 60);
     private static readonly Rect ExitBounds = new(64, 454, 260, 46);
@@ -41,6 +42,7 @@ class GameMain : G2AppBase
         _buttonFont = new G2Font("Malgun Gothic", 20, FontWeight.Bold,
             textAlignment: TextAlignment.Center, paragraphAlignment: ParagraphAlignment.Center);
         _brush = RenderTarget.CreateSolidColorBrush(new Color4(0, 0, 0, 1));
+        _audio = new ForgeAudio();
 
         // GameProject와 같이 창 이벤트로 짧은 입력도 받는다.
         _window = Control.FromHandle(RenderTarget.Hwnd) as Form;
@@ -56,7 +58,7 @@ class GameMain : G2AppBase
 
     protected override void Update()
     {
-        // UI와 씬 이동만 구현한다. 강화 판정과 수치 변경은 아직 없다.
+        // UI와 효과음만 구현한다. 강화 판정과 수치 변경은 아직 없다.
     }
 
     protected override void Render()
@@ -199,12 +201,14 @@ class GameMain : G2AppBase
     private void OnDeactivate(object? sender, EventArgs e)
     {
         _heldKeys.Clear();
+        _audio?.StopAll();
         ResetPointer(sender, e);
     }
 
     private void ChangeScene(Scene scene)
     {
         _scene = scene;
+        _audio?.PlaySceneTransition();
         ResetPointer(null, EventArgs.Empty);
     }
 
@@ -226,6 +230,7 @@ class GameMain : G2AppBase
             _window.KeyUp -= OnKeyUp;
             _window.Deactivate -= OnDeactivate;
         }
+        _audio?.Dispose();
         _titleBackground?.Dispose();
         _gameBackground?.Dispose();
         _anvil?.Dispose();
