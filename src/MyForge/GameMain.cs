@@ -9,7 +9,7 @@ class GameMain : G2AppBase
     public override string GameName => GameGlobal.GameName;
 
     private enum Scene { Title, Main }
-    private enum MenuButton { None, Start, Exit, Back }
+    private enum MenuButton { None, Start, Exit, Back, Hammer }
     private Scene _scene = Scene.Title;
     private MenuButton _hovered;
     private Form? _window;
@@ -18,11 +18,13 @@ class GameMain : G2AppBase
     private G2Font? _displayFont, _headingFont, _bodyFont, _smallFont, _valueFont, _buttonFont;
     private ID2D1SolidColorBrush? _brush;
     private ForgeAudio? _audio;
+    private readonly HammerFeedback _hammerFeedback = new();
+    private System.Drawing.PointF? _pointer;
 
     private static readonly Rect StartBounds = new(64, 380, 260, 60);
     private static readonly Rect ExitBounds = new(64, 454, 260, 46);
     private static readonly Rect BackBounds = new(32, 570, 144, 44);
-    private static readonly Rect EnhanceBounds = new(330, 556, 260, 58);
+    private static readonly Rect HammerBounds = new(476, 184, 144, 176);
     private static readonly Color4 Gold = new(0.95f, 0.77f, 0.44f, 1);
     private static readonly Color4 White = new(0.96f, 0.93f, 0.86f, 1);
     private static readonly Color4 Muted = new(0.70f, 0.69f, 0.65f, 1);
@@ -32,7 +34,7 @@ class GameMain : G2AppBase
         _titleBackground = new G2Texture("resource/images/title_background.png");
         _gameBackground = new G2Texture("resource/images/game_background.png");
         _anvil = new G2Texture("resource/images/anvil.png");
-        _sword = new G2Texture("resource/images/sword.png");
+        _sword = new G2Texture("resource/images/swords/sword_00.png");
         _hammer = new G2Texture("resource/images/hammer.png");
         _displayFont = new G2Font("Georgia", 66, FontWeight.Bold);
         _headingFont = new G2Font("Georgia", 25, FontWeight.Bold);
@@ -54,11 +56,14 @@ class GameMain : G2AppBase
         _window.KeyDown += OnKeyDown;
         _window.KeyUp += OnKeyUp;
         _window.Deactivate += OnDeactivate;
+        _window.Activated += OnActivated;
     }
 
     protected override void Update()
     {
-        // UI와 효과음만 구현한다. 강화 판정과 수치 변경은 아직 없다.
+        if (_scene != Scene.Main) return;
+        _hammerFeedback.Update(DeltaTime, _hovered == MenuButton.Hammer);
+        RefreshPointer();
     }
 
     protected override void Render()
@@ -100,7 +105,11 @@ class GameMain : G2AppBase
         Text(_valueFont, "+0", new Rect(413, 149, 120, 44), Gold);
         _anvil?.Draw(new Rect(252, 280, 352, 240), new Rect(0, 0, 440, 300));
         _sword?.Draw(new Rect(316, 266, 288, 57.6f), new Rect(0, 0, 360, 72));
-        _hammer?.Draw(new Rect(476, 184, 144, 176), new Rect(0, 0, 180, 220));
+        float scale = _hammerFeedback.Scale;
+        _hammer?.Draw(new Rect(
+            HammerBounds.X - HammerBounds.Width * (scale - 1) / 2,
+            HammerBounds.Y - HammerBounds.Height * (scale - 1) / 2 + _hammerFeedback.StrikeOffset,
+            HammerBounds.Width * scale, HammerBounds.Height * scale), new Rect(0, 0, 180, 220));
 
         Panel(new Rect(704, 112, 232, 414));
         Text(_bodyFont, "강화 확률", new Rect(726, 135, 180, 30), Gold);
@@ -115,7 +124,8 @@ class GameMain : G2AppBase
         Text(_smallFont, "파괴 시 +0부터 다시 도전", new Rect(726, 473, 200, 25), White);
 
         DrawButton(BackBounds, "시작 화면", MenuButton.Back);
-        DrawButton(EnhanceBounds, "강화", MenuButton.None, true, false);
+        Text(_buttonFont, _hammerFeedback.IsStriking ? "두드리는 중..." : "망치를 눌러 강화", new Rect(300, 548, 340, 42), Gold);
+        Text(_smallFont, "망치에 마우스를 올리고 클릭하세요", new Rect(326, 596, 330, 24), White);
         Text(_smallFont, "최고 목표", new Rect(724, 553, 120, 24), Muted);
         Text(_valueFont, "+10", new Rect(818, 560, 100, 46), Gold);
         Text(_smallFont, "Esc : 시작 화면", new Rect(34, 617, 200, 22), Muted);
@@ -163,19 +173,39 @@ class GameMain : G2AppBase
 
     private MenuButton HitTest(MouseEventArgs e)
     {
+        if (ScaleX <= 0 || ScaleY <= 0) return MenuButton.None;
         float x = e.X / ScaleX, y = e.Y / ScaleY;
+        return HitTest(x, y);
+    }
+
+    private MenuButton HitTest(float x, float y)
+    {
         if (_scene == Scene.Title)
         {
             if (Contains(StartBounds, x, y)) return MenuButton.Start;
             if (Contains(ExitBounds, x, y)) return MenuButton.Exit;
         }
-        else if (Contains(BackBounds, x, y)) return MenuButton.Back;
+        else
+        {
+            if (Contains(BackBounds, x, y)) return MenuButton.Back;
+            // 확대 중에도 판정 영역을 고정하여 가장자리에서 깜빡이지 않게 한다.
+            var bounds = new Rect(HammerBounds.X - 11, HammerBounds.Y - 14,
+                HammerBounds.Width + 22, HammerBounds.Height + 28);
+            if (!_hammerFeedback.IsStriking && Contains(bounds, x, y)) return MenuButton.Hammer;
+        }
         return MenuButton.None;
     }
 
     private void OnMouseMove(object? sender, MouseEventArgs e)
     {
-        _hovered = HitTest(e);
+        if (ScaleX <= 0 || ScaleY <= 0) return;
+        _pointer = new System.Drawing.PointF(e.X / ScaleX, e.Y / ScaleY);
+        RefreshPointer();
+    }
+
+    private void RefreshPointer()
+    {
+        _hovered = _pointer is { } p ? HitTest(p.X, p.Y) : MenuButton.None;
         if (_window != null) _window.Cursor = _hovered == MenuButton.None ? Cursors.Default : Cursors.Hand;
     }
 
@@ -187,6 +217,10 @@ class GameMain : G2AppBase
             case MenuButton.Start: ChangeScene(Scene.Main); break;
             case MenuButton.Back: ChangeScene(Scene.Title); break;
             case MenuButton.Exit: Close(); break;
+            case MenuButton.Hammer:
+                if (_hammerFeedback.TryStart()) _audio?.PlayAttempt();
+                RefreshPointer();
+                break;
         }
     }
 
@@ -201,20 +235,28 @@ class GameMain : G2AppBase
     private void OnDeactivate(object? sender, EventArgs e)
     {
         _heldKeys.Clear();
+        _hammerFeedback.Reset();
         _audio?.StopAll();
         ResetPointer(sender, e);
+    }
+
+    private void OnActivated(object? sender, EventArgs e)
+    {
+        if (_scene == Scene.Main) _audio?.StartAmbience();
     }
 
     private void ChangeScene(Scene scene)
     {
         _scene = scene;
-        _audio?.PlaySceneTransition();
+        _hammerFeedback.Reset();
+        _audio?.PlaySceneTransition(scene == Scene.Main);
         ResetPointer(null, EventArgs.Empty);
     }
 
     private void ResetPointer(object? sender, EventArgs e)
     {
         _hovered = MenuButton.None;
+        _pointer = null;
         if (_window != null) _window.Cursor = Cursors.Default;
     }
 
@@ -229,6 +271,7 @@ class GameMain : G2AppBase
             _window.KeyDown -= OnKeyDown;
             _window.KeyUp -= OnKeyUp;
             _window.Deactivate -= OnDeactivate;
+            _window.Activated -= OnActivated;
         }
         _audio?.Dispose();
         _titleBackground?.Dispose();
