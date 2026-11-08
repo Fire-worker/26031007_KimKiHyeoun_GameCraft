@@ -2,8 +2,8 @@
 sealed class HammerFeedback
 {
     public const float HoverScale = 1.15f;
-    public const double HitInterval = 1.55;
-    public const double Duration = 4.3;
+    public const double HitInterval = 0.5;
+    public const double Duration = 2.2;
     private double _elapsed;
 
     public bool IsStriking { get; private set; }
@@ -30,12 +30,12 @@ sealed class HammerFeedback
         Scale += (target - Scale) * (float)(1 - Math.Exp(-18 * delta));
     }
 
-    // 음원의 타격 시작(0초, 1.55초, 3.1초)에 맞춰 내려갔다가 돌아온다.
+    // 음원의 타격 시작(0초, 0.5초, 1초)에 맞춰 세 번만 내려갔다 돌아온다.
     public float StrikeOffset
     {
         get
         {
-            if (!IsStriking) return 0;
+            if (!IsStriking || _elapsed >= HitInterval * 3) return 0;
             double phase = _elapsed % HitInterval;
             return phase < 0.3 ? 42 * (float)Math.Pow(1 - phase / 0.3, 2) : 0;
         }
